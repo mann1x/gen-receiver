@@ -329,13 +329,17 @@ function initCastReceiver() {
     handleMessage(event.data);
   });
 
-  // Sender connected
+  // Sender connected — send "ready" so sender knows we're loaded
   castContext.addEventListener(
     cast.framework.system.EventType.SENDER_CONNECTED,
     function(event) {
       console.log('[GEN] Sender connected:', event.senderId);
       senderTransportId = event.senderId;
       resetIdleTimer();
+      // Tell sender we're ready for init
+      castContext.sendCustomMessage(NAMESPACE, event.senderId,
+        { type: 'ready' });
+      console.log('[GEN] Sent ready to sender');
     }
   );
 
