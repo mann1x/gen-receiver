@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GEN Carousel</title>
+<script src="https://www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #1a1a1a;
+    color: #fff;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    overflow: hidden;
+    width: 100vw;
+    height: 100vh;
+  }
+
+  /* --- Loading Screen --- */
+  #loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    gap: 24px;
+  }
+
+  #loading .logo {
+    font-size: 64px;
+    font-weight: 700;
+    color: #E60000;
+    letter-spacing: 4px;
+  }
+
+  #loading .spinner {
+    width: 48px;
+    height: 48px;
+    border: 4px solid #333;
+    border-top-color: #E60000;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  #loading .hint {
+    color: #888;
+    font-size: 20px;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* --- Carousel Screen --- */
+  #carousel-screen {
+    display: none;
+    flex-direction: column;
+    height: 100vh;
+    padding: 40px 0 0 0;
+  }
+
+  /* Playlist tabs */
+  .playlist-tabs {
+    display: flex;
+    gap: 12px;
+    padding: 0 60px;
+    margin-bottom: 24px;
+  }
+
+  .playlist-tab {
+    padding: 10px 28px;
+    border-radius: 24px;
+    font-size: 22px;
+    font-weight: 600;
+    background: #2a2a2a;
+    color: #aaa;
+    transition: all 0.3s ease;
+    cursor: default;
+    white-space: nowrap;
+  }
+
+  .playlist-tab.active {
+    background: #E60000;
+    color: #fff;
+  }
+
+  /* Carousel container */
+  .carousel-wrapper {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    overflow: hidden;
+    padding: 0 0 60px 0;
+  }
+
+  .carousel-track {
+    display: flex;
+    gap: 20px;
+    padding: 20px 60px;
+    transition: transform 0.4s cubic-bezier(0.25, 0.1, 0.25, 1);
+    will-change: transform;
+  }
+
+  /* Video card */
+  .video-card {
+    flex-shrink: 0;
+    width: 380px;
+    border-radius: 16px;
+    overflow: hidden;
+    background: #2a2a2a;
+    transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+    border: 3px solid transparent;
+    cursor: default;
+  }
+
+  .video-card.focused {
+    transform: scale(1.08);
+    border-color: #E60000;
+    box-shadow: 0 0 40px rgba(230, 0, 0, 0.4);
+  }
+
+  .video-card .thumb {
+    width: 100%;
+    aspect-ratio: 16/9;
+    object-fit: cover;
+    display: block;
+    background: #111;
+  }
+
+  .video-card .card-info {
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .video-card .card-index {
+    font-size: 18px;
+    font-weight: 700;
+    color: #E60000;
+    min-width: 28px;
+  }
+
+  .video-card .card-title {
+    font-size: 18px;
+    color: #ccc;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .video-card.focused .card-title {
+    color: #fff;
+  }
+
+  /* Bottom bar */
+  .bottom-bar {
+    padding: 16px 60px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(0, 0, 0, 0.5);
+  }
+
+  .bottom-bar .playlist-name {
+    font-size: 28px;
+    font-weight: 600;
+    color: #E60000;
+  }
+
+  .bottom-bar .position {
+    font-size: 22px;
+    color: #888;
+  }
+
+  /* --- Player Screen --- */
+  #player-screen {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: #000;
+    z-index: 100;
+  }
+
+  #yt-player {
+    width: 100%;
+    height: 100%;
+  }
+
+  /* Pause overlay */
+  #pause-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 200;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #pause-overlay .pause-icon {
+    font-size: 120px;
+    color: #E60000;
+    animation: fadeInOut 2s ease-in-out;
+  }
+
+  @keyframes fadeInOut {
+    0% { opacity: 0; transform: scale(0.5); }
+    30% { opacity: 1; transform: scale(1); }
+    70% { opacity: 1; transform: scale(1); }
+    100% { opacity: 0; transform: scale(0.8); }
+  }
+
+  /* Idle overlay */
+  #idle-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0;
+    width: 100vw; height: 100vh;
+    background: #1a1a1a;
+    z-index: 300;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+  }
+
+  #idle-overlay .logo {
+    font-size: 72px;
+    font-weight: 700;
+    color: #E60000;
+    letter-spacing: 4px;
+  }
+
+  #idle-overlay .idle-text {
+    font-size: 24px;
+    color: #666;
+  }
+</style>
+</head>
+<body>
+
+<!-- Loading screen (shown until sender sends init) -->
+<div id="loading">
+  <div class="logo">GEN</div>
+  <div class="spinner"></div>
+  <div class="hint">Waiting for device...</div>
+</div>
+
+<!-- Carousel screen -->
+<div id="carousel-screen">
+  <div class="playlist-tabs" id="playlist-tabs"></div>
+  <div class="carousel-wrapper">
+    <div class="carousel-track" id="carousel-track"></div>
+  </div>
+  <div class="bottom-bar">
+    <div class="playlist-name" id="current-playlist-name"></div>
+    <div class="position" id="carousel-position"></div>
+  </div>
+</div>
+
+<!-- Player screen (full-screen YouTube) -->
+<div id="player-screen">
+  <div id="yt-player"></div>
+</div>
+
+<!-- Pause overlay -->
+<div id="pause-overlay">
+  <div class="pause-icon">&#10074;&#10074;</div>
+</div>
+
+<!-- Idle / screensaver overlay -->
+<div id="idle-overlay">
+  <div class="logo">GEN</div>
+  <div class="idle-text">Press button to start</div>
+</div>
+
+<script>
+// ============================================================
+//  Cast Receiver — Carousel + YouTube Player
+// ============================================================
+
+const NAMESPACE = 'urn:x-cast:com.gen.carousel';
+const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 min idle in carousel → show idle screen
+
+// --- State ---
+let playlists = [];
+let currentPlaylist = 0;
+let focusIndex = 0;
+let appState = 'loading'; // loading | carousel | playing | paused
+let ytPlayer = null;
+let ytReady = false;
+let senderTransportId = null;
+let idleTimer = null;
+let castContext = null;
+
+// --- DOM refs ---
+const $loading = document.getElementById('loading');
+const $carouselScreen = document.getElementById('carousel-screen');
+const $playerScreen = document.getElementById('player-screen');
+const $pauseOverlay = document.getElementById('pause-overlay');
+const $idleOverlay = document.getElementById('idle-overlay');
+const $playlistTabs = document.getElementById('playlist-tabs');
+const $carouselTrack = document.getElementById('carousel-track');
+const $playlistName = document.getElementById('current-playlist-name');
+const $position = document.getElementById('carousel-position');
+
+// ============================================================
+//  Cast Receiver SDK Initialization
+// ============================================================
+
+function initCastReceiver() {
+  castContext = cast.framework.CastReceiverContext.getInstance();
+
+  // Set up custom message listener
+  castContext.addCustomMessageListener(NAMESPACE, function(event) {
+    console.log('[GEN] Message from sender:', JSON.stringify(event.data));
+    senderTransportId = event.senderId;
+    handleMessage(event.data);
+  });
+
+  // Sender connected
+  castContext.addEventListener(
+    cast.framework.system.EventType.SENDER_CONNECTED,
+    function(event) {
+      console.log('[GEN] Sender connected:', event.senderId);
+      senderTransportId = event.senderId;
+      resetIdleTimer();
+    }
+  );
+
+  // Sender disconnected — shut down after brief delay
+  castContext.addEventListener(
+    cast.framework.system.EventType.SENDER_DISCONNECTED,
+    function(event) {
+      console.log('[GEN] Sender disconnected');
+      // If no more senders, close the receiver
+      if (castContext.getSenders().length === 0) {
+        console.log('[GEN] No senders left, closing receiver');
+        setTimeout(function() { window.close(); }, 3000);
+      }
+    }
+  );
+
+  // Start with custom namespace support
+  const options = new cast.framework.CastReceiverOptions();
+  options.customNamespaces = {};
+  options.customNamespaces[NAMESPACE] = cast.framework.system.MessageType.JSON;
+  options.disableIdleTimeout = true;
+  options.skipPlayersLoad = true;
+
+  castContext.start(options);
+  console.log('[GEN] Cast receiver started');
+}
+
+// ============================================================
+//  Message Handler
+// ============================================================
+
+function handleMessage(data) {
+  // Accept both parsed object and string
+  let msg = data;
+  if (typeof data === 'string') {
+    try { msg = JSON.parse(data); } catch (e) {
+      console.error('[GEN] Invalid JSON:', data);
+      return;
+    }
+  }
+
+  resetIdleTimer();
+
+  switch (msg.type) {
+    case 'init':
+      handleInit(msg);
+      break;
+    case 'select':
+      handleSelect();
+      break;
+    case 'next':
+      handleNext();
+      break;
+    case 'prev':
+      handlePrev();
+      break;
+    case 'pause':
+      handlePause();
+      break;
+    case 'stop':
+      handleStop();
+      break;
+    case 'playlist':
+      handlePlaylistSwitch(msg);
+      break;
+    default:
+      console.warn('[GEN] Unknown message type:', msg.type);
+  }
+}
+
+// ============================================================
+//  Init — Load playlists into carousel
+// ============================================================
+
+function handleInit(msg) {
+  if (!msg.playlists || !msg.playlists.length) {
+    console.error('[GEN] Init message missing playlists');
+    return;
+  }
+
+  playlists = msg.playlists;
+  currentPlaylist = msg.playlist || 0;
+  focusIndex = msg.video || 0;
+
+  console.log('[GEN] Loaded ' + playlists.length + ' playlists, ' +
+    'starting at playlist ' + currentPlaylist + ' video ' + focusIndex);
+
+  showCarousel();
+}
+
+// ============================================================
+//  Carousel Rendering
+// ============================================================
+
+function showCarousel() {
+  appState = 'carousel';
+
+  $loading.style.display = 'none';
+  $playerScreen.style.display = 'none';
+  $idleOverlay.style.display = 'none';
+  $carouselScreen.style.display = 'flex';
+
+  renderPlaylistTabs();
+  renderCarouselItems();
+  updateFocus();
+  sendStatus();
+  resetIdleTimer();
+}
+
+function renderPlaylistTabs() {
+  $playlistTabs.innerHTML = '';
+  playlists.forEach(function(pl, i) {
+    const tab = document.createElement('div');
+    tab.className = 'playlist-tab' + (i === currentPlaylist ? ' active' : '');
+    tab.textContent = pl.name;
+    $playlistTabs.appendChild(tab);
+  });
+}
+
+function renderCarouselItems() {
+  const pl = playlists[currentPlaylist];
+  if (!pl || !pl.videos) return;
+
+  $carouselTrack.innerHTML = '';
+  pl.videos.forEach(function(video, i) {
+    const card = document.createElement('div');
+    card.className = 'video-card';
+    card.dataset.index = i;
+
+    const img = document.createElement('img');
+    img.className = 'thumb';
+    img.src = video.thumb || ('https://img.youtube.com/vi/' + video.id + '/mqdefault.jpg');
+    img.alt = video.title || ('Video ' + (i + 1));
+    img.loading = (i < 5) ? 'eager' : 'lazy';
+
+    const info = document.createElement('div');
+    info.className = 'card-info';
+
+    const idx = document.createElement('span');
+    idx.className = 'card-index';
+    idx.textContent = (i + 1);
+
+    const title = document.createElement('span');
+    title.className = 'card-title';
+    title.textContent = video.title || ('Video ' + (i + 1));
+
+    info.appendChild(idx);
+    info.appendChild(title);
+    card.appendChild(img);
+    card.appendChild(info);
+    $carouselTrack.appendChild(card);
+  });
+
+  $playlistName.textContent = pl.name;
+}
+
+function updateFocus() {
+  const cards = $carouselTrack.querySelectorAll('.video-card');
+  cards.forEach(function(card, i) {
+    card.classList.toggle('focused', i === focusIndex);
+  });
+
+  // Scroll carousel to keep focused item centered
+  const cardWidth = 380 + 20; // card width + gap
+  const viewWidth = window.innerWidth;
+  const offset = Math.max(0, focusIndex * cardWidth - (viewWidth / 2) + (cardWidth / 2));
+  $carouselTrack.style.transform = 'translateX(-' + offset + 'px)';
+
+  // Update position indicator
+  const pl = playlists[currentPlaylist];
+  if (pl && pl.videos) {
+    $position.textContent = (focusIndex + 1) + ' / ' + pl.videos.length;
+  }
+}
+
+// ============================================================
+//  Carousel Navigation
+// ============================================================
+
+function handleNext() {
+  if (appState === 'carousel') {
+    const pl = playlists[currentPlaylist];
+    if (pl && pl.videos) {
+      focusIndex = (focusIndex + 1) % pl.videos.length;
+      updateFocus();
+      sendStatus();
+    }
+  } else if (appState === 'playing' || appState === 'paused') {
+    // Advance to next video while playing
+    const pl = playlists[currentPlaylist];
+    if (pl && pl.videos) {
+      focusIndex = (focusIndex + 1) % pl.videos.length;
+      playCurrentVideo();
+    }
+  }
+}
+
+function handlePrev() {
+  if (appState === 'carousel') {
+    const pl = playlists[currentPlaylist];
+    if (pl && pl.videos) {
+      focusIndex = (focusIndex - 1 + pl.videos.length) % pl.videos.length;
+      updateFocus();
+      sendStatus();
+    }
+  } else if (appState === 'playing' || appState === 'paused') {
+    const pl = playlists[currentPlaylist];
+    if (pl && pl.videos) {
+      focusIndex = (focusIndex - 1 + pl.videos.length) % pl.videos.length;
+      playCurrentVideo();
+    }
+  }
+}
+
+function handlePlaylistSwitch(msg) {
+  const idx = msg.playlist || 0;
+  if (idx >= 0 && idx < playlists.length && idx !== currentPlaylist) {
+    currentPlaylist = idx;
+    focusIndex = 0;
+    renderPlaylistTabs();
+    renderCarouselItems();
+    updateFocus();
+    sendStatus();
+  }
+}
+
+// ============================================================
+//  Select — Play focused video
+// ============================================================
+
+function handleSelect() {
+  if (appState === 'carousel') {
+    playCurrentVideo();
+  }
+}
+
+function playCurrentVideo() {
+  const pl = playlists[currentPlaylist];
+  if (!pl || !pl.videos || !pl.videos[focusIndex]) return;
+
+  const videoId = pl.videos[focusIndex].id;
+  console.log('[GEN] Playing video: ' + videoId + ' (playlist ' + currentPlaylist + ', index ' + focusIndex + ')');
+
+  appState = 'playing';
+  $carouselScreen.style.display = 'none';
+  $playerScreen.style.display = 'block';
+
+  if (ytReady && ytPlayer) {
+    ytPlayer.loadVideoById(videoId);
+  } else {
+    // YouTube API not ready yet — create player
+    createYouTubePlayer(videoId);
+  }
+
+  sendStatus();
+}
+
+// ============================================================
+//  Pause / Resume
+// ============================================================
+
+function handlePause() {
+  if (appState === 'playing' && ytPlayer) {
+    ytPlayer.pauseVideo();
+    appState = 'paused';
+    showPauseOverlay();
+    sendStatus();
+  } else if (appState === 'paused' && ytPlayer) {
+    ytPlayer.playVideo();
+    appState = 'playing';
+    sendStatus();
+  }
+}
+
+function showPauseOverlay() {
+  $pauseOverlay.style.display = 'flex';
+  // Reset animation
+  const icon = $pauseOverlay.querySelector('.pause-icon');
+  icon.style.animation = 'none';
+  icon.offsetHeight; // trigger reflow
+  icon.style.animation = '';
+  setTimeout(function() {
+    $pauseOverlay.style.display = 'none';
+  }, 2000);
+}
+
+// ============================================================
+//  Stop — Return to carousel
+// ============================================================
+
+function handleStop() {
+  if (appState === 'playing' || appState === 'paused') {
+    if (ytPlayer) {
+      ytPlayer.stopVideo();
+    }
+    showCarousel();
+  } else if (appState === 'carousel') {
+    // Stop from carousel → show idle screen
+    $carouselScreen.style.display = 'none';
+    $idleOverlay.style.display = 'flex';
+    appState = 'loading';
+    sendStatus();
+  }
+}
+
+// ============================================================
+//  YouTube IFrame Player API
+// ============================================================
+
+function loadYouTubeAPI() {
+  const tag = document.createElement('script');
+  tag.src = 'https://www.youtube.com/iframe_api';
+  document.head.appendChild(tag);
+}
+
+// Global callback required by YouTube API
+window.onYouTubeIframeAPIReady = function() {
+  console.log('[GEN] YouTube IFrame API ready');
+  ytReady = true;
+};
+
+function createYouTubePlayer(videoId) {
+  // Destroy existing player if any
+  if (ytPlayer) {
+    try { ytPlayer.destroy(); } catch(e) {}
+    ytPlayer = null;
+  }
+
+  // Ensure the target div exists (YouTube API replaces it with an iframe)
+  if (!document.getElementById('yt-player')) {
+    var div = document.createElement('div');
+    div.id = 'yt-player';
+    $playerScreen.appendChild(div);
+  }
+
+  ytPlayer = new YT.Player('yt-player', {
+    videoId: videoId,
+    width: '100%',
+    height: '100%',
+    playerVars: {
+      autoplay: 1,
+      controls: 0,
+      modestbranding: 1,
+      rel: 0,
+      showinfo: 0,
+      iv_load_policy: 3,
+      fs: 0,
+      disablekb: 1,
+      playsinline: 1,
+      origin: window.location.origin
+    },
+    events: {
+      onReady: function(event) {
+        console.log('[GEN] YouTube player ready');
+        event.target.playVideo();
+      },
+      onStateChange: function(event) {
+        onYTStateChange(event.data);
+      },
+      onError: function(event) {
+        console.error('[GEN] YouTube error:', event.data);
+        // Skip to next video on error
+        handleNext();
+      }
+    }
+  });
+}
+
+function onYTStateChange(state) {
+  // YT.PlayerState: ENDED=0, PLAYING=1, PAUSED=2, BUFFERING=3, CUED=5
+  if (state === 0) {
+    // Video ended — advance to next
+    console.log('[GEN] Video ended, advancing to next');
+    const pl = playlists[currentPlaylist];
+    if (pl && pl.videos) {
+      focusIndex = (focusIndex + 1) % pl.videos.length;
+      playCurrentVideo();
+    }
+  } else if (state === 1) {
+    appState = 'playing';
+    sendStatus();
+  } else if (state === 2) {
+    appState = 'paused';
+    sendStatus();
+  }
+}
+
+// ============================================================
+//  Status Reporting (Receiver → Sender)
+// ============================================================
+
+function sendStatus() {
+  if (!castContext || !senderTransportId) return;
+
+  const status = {
+    type: 'status',
+    state: appState,
+    playlist: currentPlaylist,
+    video: focusIndex
+  };
+
+  try {
+    castContext.sendCustomMessage(NAMESPACE, senderTransportId, status);
+    console.log('[GEN] Status sent:', JSON.stringify(status));
+  } catch (e) {
+    console.warn('[GEN] Failed to send status:', e.message);
+    // Try broadcast to all senders
+    try {
+      castContext.sendCustomMessage(NAMESPACE, undefined, status);
+    } catch (e2) {}
+  }
+}
+
+// ============================================================
+//  Idle Timer
+// ============================================================
+
+function resetIdleTimer() {
+  clearTimeout(idleTimer);
+  if (appState === 'carousel') {
+    idleTimer = setTimeout(function() {
+      console.log('[GEN] Idle timeout — showing idle screen');
+      $carouselScreen.style.display = 'none';
+      $idleOverlay.style.display = 'flex';
+      // Don't change appState — sender can re-init
+    }, IDLE_TIMEOUT_MS);
+  }
+}
+
+// ============================================================
+//  Keyboard Controls (for testing in Chrome browser)
+// ============================================================
+
+document.addEventListener('keydown', function(e) {
+  switch (e.key) {
+    case 'ArrowRight':
+      handleMessage({ type: 'next' });
+      break;
+    case 'ArrowLeft':
+      handleMessage({ type: 'prev' });
+      break;
+    case 'Enter':
+      handleMessage({ type: 'select' });
+      break;
+    case ' ':
+      e.preventDefault();
+      handleMessage({ type: 'pause' });
+      break;
+    case 'Escape':
+    case 'Backspace':
+      handleMessage({ type: 'stop' });
+      break;
+    case 'ArrowUp':
+      // Switch to previous playlist
+      if (appState === 'carousel' && currentPlaylist > 0) {
+        handleMessage({ type: 'playlist', playlist: currentPlaylist - 1 });
+      }
+      break;
+    case 'ArrowDown':
+      // Switch to next playlist
+      if (appState === 'carousel' && currentPlaylist < playlists.length - 1) {
+        handleMessage({ type: 'playlist', playlist: currentPlaylist + 1 });
+      }
+      break;
+    case 'd':
+      // Debug: load demo playlists
+      loadDemoPlaylists();
+      break;
+  }
+});
+
+// ============================================================
+//  Demo Mode (for browser testing without Cast sender)
+// ============================================================
+
+function loadDemoPlaylists() {
+  handleMessage({
+    type: 'init',
+    playlist: 0,
+    video: 0,
+    playlists: [
+      {
+        name: 'Nursery Rhymes',
+        icon: 'N',
+        videos: [
+          { id: 'XqZsoesa55w', title: 'Baby Shark', thumb: 'https://img.youtube.com/vi/XqZsoesa55w/mqdefault.jpg' },
+          { id: 'e_04ZrNroTo', title: 'Wheels on the Bus', thumb: 'https://img.youtube.com/vi/e_04ZrNroTo/mqdefault.jpg' },
+          { id: '_UR-l3QI2nE', title: 'Old MacDonald', thumb: 'https://img.youtube.com/vi/_UR-l3QI2nE/mqdefault.jpg' },
+          { id: 'MR5XSOdjKMA', title: 'Five Little Ducks', thumb: 'https://img.youtube.com/vi/MR5XSOdjKMA/mqdefault.jpg' },
+          { id: 'WRVsOCh907o', title: 'Twinkle Twinkle', thumb: 'https://img.youtube.com/vi/WRVsOCh907o/mqdefault.jpg' },
+          { id: 'ZWNaibZ9Dl8', title: 'Itsy Bitsy Spider', thumb: 'https://img.youtube.com/vi/ZWNaibZ9Dl8/mqdefault.jpg' },
+          { id: 'sAIc8uFBJoM', title: 'Head Shoulders', thumb: 'https://img.youtube.com/vi/sAIc8uFBJoM/mqdefault.jpg' },
+          { id: 'HP-MbfHFUqs', title: 'Row Row Row', thumb: 'https://img.youtube.com/vi/HP-MbfHFUqs/mqdefault.jpg' },
+          { id: 'F4tHL8reNCs', title: 'Humpty Dumpty', thumb: 'https://img.youtube.com/vi/F4tHL8reNCs/mqdefault.jpg' },
+          { id: 'WX8HmogNyCY', title: 'Jack and Jill', thumb: 'https://img.youtube.com/vi/WX8HmogNyCY/mqdefault.jpg' }
+        ]
+      },
+      {
+        name: 'Learning',
+        icon: 'L',
+        videos: [
+          { id: 'hq3yfQnllfQ', title: 'ABC Song', thumb: 'https://img.youtube.com/vi/hq3yfQnllfQ/mqdefault.jpg' },
+          { id: 'DR-cfDsHCGA', title: 'Counting 1-10', thumb: 'https://img.youtube.com/vi/DR-cfDsHCGA/mqdefault.jpg' },
+          { id: 'OEbRDtCAFdU', title: 'Colors Song', thumb: 'https://img.youtube.com/vi/OEbRDtCAFdU/mqdefault.jpg' },
+          { id: 'mXMofxtDPUQ', title: 'Shapes Song', thumb: 'https://img.youtube.com/vi/mXMofxtDPUQ/mqdefault.jpg' },
+          { id: 'jYAWf8Y91hA', title: 'Phonics Song', thumb: 'https://img.youtube.com/vi/jYAWf8Y91hA/mqdefault.jpg' },
+          { id: 'zXEq-QO3xTg', title: 'Days of Week', thumb: 'https://img.youtube.com/vi/zXEq-QO3xTg/mqdefault.jpg' },
+          { id: 'ZhODBFQ2-bQ', title: 'Months Song', thumb: 'https://img.youtube.com/vi/ZhODBFQ2-bQ/mqdefault.jpg' },
+          { id: 'l4WNrvVjiTw', title: 'Body Parts', thumb: 'https://img.youtube.com/vi/l4WNrvVjiTw/mqdefault.jpg' },
+          { id: 'ZanHgPprl-0', title: 'Animals Song', thumb: 'https://img.youtube.com/vi/ZanHgPprl-0/mqdefault.jpg' },
+          { id: 't99ULJjCsaM', title: 'Fruits Song', thumb: 'https://img.youtube.com/vi/t99ULJjCsaM/mqdefault.jpg' }
+        ]
+      },
+      {
+        name: 'Cartoons',
+        icon: 'C',
+        videos: [
+          { id: 'XwZ8NGnDH0s', title: 'Cartoon 1', thumb: 'https://img.youtube.com/vi/XwZ8NGnDH0s/mqdefault.jpg' },
+          { id: 'sBe4-UcwTPM', title: 'Cartoon 2', thumb: 'https://img.youtube.com/vi/sBe4-UcwTPM/mqdefault.jpg' },
+          { id: 'RafDio654Ws', title: 'Cartoon 3', thumb: 'https://img.youtube.com/vi/RafDio654Ws/mqdefault.jpg' },
+          { id: '_2yM8MM9qNs', title: 'Cartoon 4', thumb: 'https://img.youtube.com/vi/_2yM8MM9qNs/mqdefault.jpg' },
+          { id: 'bppulSQPyzw', title: 'Cartoon 5', thumb: 'https://img.youtube.com/vi/bppulSQPyzw/mqdefault.jpg' },
+          { id: '4cxGgnL7mSc', title: 'Cartoon 6', thumb: 'https://img.youtube.com/vi/4cxGgnL7mSc/mqdefault.jpg' },
+          { id: '8wxDSaQ5wUc', title: 'Cartoon 7', thumb: 'https://img.youtube.com/vi/8wxDSaQ5wUc/mqdefault.jpg' },
+          { id: 'TSO6fk72QQE', title: 'Cartoon 8', thumb: 'https://img.youtube.com/vi/TSO6fk72QQE/mqdefault.jpg' }
+        ]
+      }
+    ]
+  });
+}
+
+// ============================================================
+//  Boot
+// ============================================================
+
+// Load YouTube API early
+loadYouTubeAPI();
+
+// Initialize receiver — works on Cast device and in browser (for testing)
+if (typeof cast !== 'undefined' && cast.framework) {
+  initCastReceiver();
+} else {
+  console.warn('[GEN] Cast SDK not available');
+}
+
+// Browser test mode hint
+if (navigator.userAgent.indexOf('CrKey') === -1) {
+  console.log('[GEN] Browser test mode — press "d" for demo playlists');
+  console.log('[GEN] Arrow keys: navigate, Enter: select, Space: pause, Escape: stop');
+  $loading.querySelector('.hint').textContent = 'Browser test mode \u2014 press D for demo';
+}
+
+</script>
+
+</body>
+</html>
