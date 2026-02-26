@@ -301,6 +301,8 @@ let ytReady = false;
 let senderTransportId = null;
 let idleTimer = null;
 let castContext = null;
+let autoRotateTimer = null;
+const AUTO_ROTATE_MS = 3000; // 3 seconds per item
 
 // --- DOM refs ---
 const $loading = document.getElementById('loading');
@@ -441,6 +443,7 @@ function showCarousel() {
   updateFocus();
   sendStatus();
   resetIdleTimer();
+  startAutoRotate();
 }
 
 function renderPlaylistTabs() {
@@ -520,6 +523,7 @@ function handleNext() {
       focusIndex = (focusIndex + 1) % pl.videos.length;
       updateFocus();
       sendStatus();
+      startAutoRotate(); // Reset timer after manual nav
     }
   } else if (appState === 'playing' || appState === 'paused') {
     // Advance to next video while playing
@@ -538,6 +542,7 @@ function handlePrev() {
       focusIndex = (focusIndex - 1 + pl.videos.length) % pl.videos.length;
       updateFocus();
       sendStatus();
+      startAutoRotate(); // Reset timer after manual nav
     }
   } else if (appState === 'playing' || appState === 'paused') {
     const pl = playlists[currentPlaylist];
@@ -549,7 +554,8 @@ function handlePrev() {
 }
 
 function handlePlaylistSwitch(msg) {
-  const idx = msg.playlist || 0;
+  var idx = msg.playlist;
+  if (idx === undefined) idx = 0;
   if (idx >= 0 && idx < playlists.length && idx !== currentPlaylist) {
     currentPlaylist = idx;
     focusIndex = 0;
@@ -557,6 +563,7 @@ function handlePlaylistSwitch(msg) {
     renderCarouselItems();
     updateFocus();
     sendStatus();
+    startAutoRotate();
   }
 }
 
@@ -578,6 +585,7 @@ function playCurrentVideo() {
   console.log('[GEN] Playing video: ' + videoId + ' (playlist ' + currentPlaylist + ', index ' + focusIndex + ')');
 
   appState = 'playing';
+  stopAutoRotate();
   $carouselScreen.style.display = 'none';
   $playerScreen.style.display = 'block';
 
@@ -632,6 +640,7 @@ function handleStop() {
     showCarousel();
   } else if (appState === 'carousel') {
     // Stop from carousel → show idle screen
+    stopAutoRotate();
     $carouselScreen.style.display = 'none';
     $idleOverlay.style.display = 'flex';
     appState = 'loading';
@@ -760,6 +769,28 @@ function resetIdleTimer() {
       $idleOverlay.style.display = 'flex';
       // Don't change appState — sender can re-init
     }, IDLE_TIMEOUT_MS);
+  }
+}
+
+// ============================================================
+//  Auto-Rotate Carousel
+// ============================================================
+
+function startAutoRotate() {
+  stopAutoRotate();
+  autoRotateTimer = setInterval(function() {
+    if (appState !== 'carousel') return;
+    var pl = playlists[currentPlaylist];
+    if (!pl || !pl.videos) return;
+    focusIndex = (focusIndex + 1) % pl.videos.length;
+    updateFocus();
+  }, AUTO_ROTATE_MS);
+}
+
+function stopAutoRotate() {
+  if (autoRotateTimer) {
+    clearInterval(autoRotateTimer);
+    autoRotateTimer = null;
   }
 }
 
