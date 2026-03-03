@@ -17,39 +17,21 @@
     height: 100vh;
   }
 
-  /* --- Loading Screen --- */
+  /* Hide Cast SDK default splash / idle UI */
+  cast-media-player,
+  .splash,
+  .overlay,
+  [class*="splash"],
+  [class*="idle"],
+  [class*="watermark"] {
+    display: none !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+  }
+
+  /* --- Loading Screen (blank dark until init) --- */
   #loading {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
     height: 100vh;
-    gap: 24px;
-  }
-
-  #loading .logo {
-    font-size: 64px;
-    font-weight: 700;
-    color: #E60000;
-    letter-spacing: 4px;
-  }
-
-  #loading .spinner {
-    width: 48px;
-    height: 48px;
-    border: 4px solid #333;
-    border-top-color: #E60000;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-  }
-
-  #loading .hint {
-    color: #888;
-    font-size: 20px;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
   }
 
   /* --- Carousel Screen --- */
@@ -219,41 +201,12 @@
     100% { opacity: 0; transform: scale(0.8); }
   }
 
-  /* Idle overlay */
-  #idle-overlay {
-    display: none;
-    position: fixed;
-    top: 0; left: 0;
-    width: 100vw; height: 100vh;
-    background: #1a1a1a;
-    z-index: 300;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 20px;
-  }
-
-  #idle-overlay .logo {
-    font-size: 72px;
-    font-weight: 700;
-    color: #E60000;
-    letter-spacing: 4px;
-  }
-
-  #idle-overlay .idle-text {
-    font-size: 24px;
-    color: #666;
-  }
 </style>
 </head>
 <body>
 
-<!-- Loading screen (shown until sender sends init) -->
-<div id="loading">
-  <div class="logo">GEN</div>
-  <div class="spinner"></div>
-  <div class="hint">Waiting for device...</div>
-</div>
+<!-- Loading screen (blank dark background until sender sends init) -->
+<div id="loading"></div>
 
 <!-- Carousel screen -->
 <div id="carousel-screen">
@@ -277,19 +230,12 @@
   <div class="pause-icon">&#10074;&#10074;</div>
 </div>
 
-<!-- Idle / screensaver overlay -->
-<div id="idle-overlay">
-  <div class="logo">GEN</div>
-  <div class="idle-text">Press button to start</div>
-</div>
-
 <script>
 // ============================================================
 //  Cast Receiver — Carousel + YouTube Player
 // ============================================================
 
 const NAMESPACE = 'urn:x-cast:com.gen.carousel';
-const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 min idle in carousel → show idle screen
 
 // --- State ---
 let playlists = [];
@@ -299,7 +245,6 @@ let appState = 'loading'; // loading | carousel | playing | paused
 let ytPlayer = null;
 let ytReady = false;
 let senderTransportId = null;
-let idleTimer = null;
 let castContext = null;
 let autoRotateTimer = null;
 const AUTO_ROTATE_MS = 3000; // 3 seconds per item
@@ -309,7 +254,6 @@ const $loading = document.getElementById('loading');
 const $carouselScreen = document.getElementById('carousel-screen');
 const $playerScreen = document.getElementById('player-screen');
 const $pauseOverlay = document.getElementById('pause-overlay');
-const $idleOverlay = document.getElementById('idle-overlay');
 const $playlistTabs = document.getElementById('playlist-tabs');
 const $carouselTrack = document.getElementById('carousel-track');
 const $playlistName = document.getElementById('current-playlist-name');
@@ -335,7 +279,6 @@ function initCastReceiver() {
     function(event) {
       console.log('[GEN] Sender connected:', event.senderId);
       senderTransportId = event.senderId;
-      resetIdleTimer();
       // Tell sender we're ready for init
       castContext.sendCustomMessage(NAMESPACE, event.senderId,
         { type: 'ready' });
@@ -356,15 +299,30 @@ function initCastReceiver() {
     }
   );
 
-  // Start with custom namespace support
+  // Start with custom namespace support — no default splash/idle UI
   const options = new cast.framework.CastReceiverOptions();
   options.customNamespaces = {};
   options.customNamespaces[NAMESPACE] = cast.framework.system.MessageType.JSON;
   options.disableIdleTimeout = true;
   options.skipPlayersLoad = true;
+  options.statusText = '';
+  options.touchScreenOptimizedApp = false;
+
+  // Hide default Cast splash / "Press button to start" overlay
+  const playerManager = castContext.getPlayerManager();
+  playerManager.setMessageInterceptor(
+    cast.framework.messages.MessageType.LOAD,
+    function(request) { return null; }
+  );
 
   castContext.start(options);
   console.log('[GEN] Cast receiver started');
+
+  // Immediately hide any default UI overlay
+  try {
+    var splashElements = document.querySelectorAll('cast-media-player, .splash');
+    splashElements.forEach(function(el) { el.style.display = 'none'; });
+  } catch(e) {}
 }
 
 // ============================================================
@@ -380,8 +338,6 @@ function handleMessage(data) {
       return;
     }
   }
-
-  resetIdleTimer();
 
   switch (msg.type) {
     case 'init':
@@ -439,14 +395,12 @@ function showCarousel() {
 
   $loading.style.display = 'none';
   $playerScreen.style.display = 'none';
-  $idleOverlay.style.display = 'none';
   $carouselScreen.style.display = 'flex';
 
   renderPlaylistTabs();
   renderCarouselItems();
   updateFocus();
   sendStatus();
-  resetIdleTimer();
   startAutoRotate();
 }
 
@@ -642,13 +596,6 @@ function handleStop() {
       ytPlayer.stopVideo();
     }
     showCarousel();
-  } else if (appState === 'carousel') {
-    // Stop from carousel → show idle screen
-    stopAutoRotate();
-    $carouselScreen.style.display = 'none';
-    $idleOverlay.style.display = 'flex';
-    appState = 'loading';
-    sendStatus();
   }
 }
 
@@ -757,22 +704,6 @@ function sendStatus() {
     try {
       castContext.sendCustomMessage(NAMESPACE, undefined, status);
     } catch (e2) {}
-  }
-}
-
-// ============================================================
-//  Idle Timer
-// ============================================================
-
-function resetIdleTimer() {
-  clearTimeout(idleTimer);
-  if (appState === 'carousel') {
-    idleTimer = setTimeout(function() {
-      console.log('[GEN] Idle timeout — showing idle screen');
-      $carouselScreen.style.display = 'none';
-      $idleOverlay.style.display = 'flex';
-      // Don't change appState — sender can re-init
-    }, IDLE_TIMEOUT_MS);
   }
 }
 
@@ -918,7 +849,6 @@ if (typeof cast !== 'undefined' && cast.framework) {
 if (navigator.userAgent.indexOf('CrKey') === -1) {
   console.log('[GEN] Browser test mode — press "d" for demo playlists');
   console.log('[GEN] Arrow keys: navigate, Enter: select, Space: pause, Escape: stop');
-  $loading.querySelector('.hint').textContent = 'Browser test mode \u2014 press D for demo';
 }
 
 </script>
